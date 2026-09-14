@@ -153,7 +153,7 @@ export async function executeMonorepoTemplate(
     : 'utils';
   const libraryProjectPath = path.join(fullPath, libraryDir);
   setPackageName(libraryProjectPath, libraryPackageName);
-  removeNestedLibraryLintConfig(libraryProjectPath);
+  removeNestedLibraryToolConfig(libraryProjectPath);
   // Perform auto-migration on the created library
   rewriteMonorepoProject(
     libraryProjectPath,
@@ -168,21 +168,24 @@ export async function executeMonorepoTemplate(
 }
 
 /**
- * Remove the root-only lint options shipped by the standalone library template.
+ * Remove the root-only lint and format options shipped by the standalone library template.
  *
  * The same remote template is also used by `vite:library`, where this config is
- * valid. A library created as a workspace member, however, gets its lint config
- * from the monorepo root, so retaining it here creates an invalid nested config.
+ * valid. A library created as a workspace member, however, gets its lint and
+ * format config from the monorepo root, so retaining them here creates invalid
+ * nested config.
  */
-export function removeNestedLibraryLintConfig(projectPath: string): void {
+export function removeNestedLibraryToolConfig(projectPath: string): void {
   const configPath = path.join(projectPath, 'vite.config.ts');
   if (!fs.existsSync(configPath)) {
     return;
   }
 
-  const result = removeConfigKey(configPath, 'lint');
-  if (result.updated) {
-    fs.writeFileSync(configPath, result.content);
+  for (const configKey of ['lint', 'fmt']) {
+    const result = removeConfigKey(configPath, configKey);
+    if (result.updated) {
+      fs.writeFileSync(configPath, result.content);
+    }
   }
 }
 

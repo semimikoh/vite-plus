@@ -7,7 +7,7 @@ create a library in an existing monorepo
 
 ## `vpt print-file packages/vite-plus-library/vite.config.ts`
 
-nested library config should omit lint
+nested library config should omit lint and fmt
 
 ```
 import { defineConfig } from "vite-plus";
@@ -19,7 +19,5 @@ export default defineConfig({
     },
     exports: true,
   },
-
-  fmt: {},
 });
 ```

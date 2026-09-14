@@ -63,7 +63,7 @@ vite-plus-monorepo/apps/website/vite.config.ts: missing
 
 ## `vpt print-file vite-plus-monorepo/packages/utils/vite.config.ts`
 
-sub-library should NOT have nested lint config
+sub-library should NOT have nested lint or fmt config
 
 ```
 import { defineConfig } from "vite-plus";
@@ -76,7 +76,5 @@ export default defineConfig({
     },
     exports: true,
   },
-
-  fmt: {},
 });
 ```
