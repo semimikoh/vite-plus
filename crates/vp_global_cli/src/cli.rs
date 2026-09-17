@@ -7,8 +7,8 @@ use std::{collections::HashSet, ffi::OsStr, process::ExitStatus};
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use clap_complete::ArgValueCompleter;
+use console::style;
 use dialoguer::{Confirm, theme::ColorfulTheme};
-use owo_colors::OwoColorize;
 use tokio::runtime::Runtime;
 use vp_pm_cli::{ManagedGlobalCommand, PackageManagerCommand};
 use vp_shared::output;
@@ -640,8 +640,14 @@ async fn run_package_manager_command(
     command: PackageManagerCommand,
 ) -> Result<ExitStatus, Error> {
     match command.managed_global_command() {
-        Some(ManagedGlobalCommand::Install { packages, node, force, concurrency }) => {
-            return managed_install(packages, node, force, concurrency).await;
+        Some(ManagedGlobalCommand::Install {
+            packages,
+            node,
+            force,
+            ignore_scripts,
+            concurrency,
+        }) => {
+            return managed_install(packages, node, force, ignore_scripts, concurrency).await;
         }
         Some(ManagedGlobalCommand::Remove { packages, dry_run }) => {
             return managed_uninstall(packages, dry_run).await;
@@ -754,6 +760,7 @@ async fn managed_install(
     packages: &[String],
     node: Option<&str>,
     force: bool,
+    ignore_scripts: bool,
     concurrency: Option<usize>,
 ) -> Result<ExitStatus, Error> {
     if let Err((package_name, error)) = global::install::install(
@@ -761,6 +768,7 @@ async fn managed_install(
         global::install::InstallOptions {
             node_version: node,
             force,
+            ignore_scripts,
             concurrency: concurrency.unwrap_or(DEFAULT_GLOBAL_INSTALL_CONCURRENCY),
             update: false,
         },
@@ -958,6 +966,7 @@ async fn managed_update(
         global::install::InstallOptions {
             node_version: Some(&current_node_version),
             force: false,
+            ignore_scripts: false,
             concurrency,
             update: true,
         },
@@ -1010,14 +1019,17 @@ fn prompt_reinstall_node_mismatches(
 ) -> bool {
     output::info("Some global packages were installed with a different Node.js version.");
     output::raw("");
-    output::raw(&format!("Current Node.js: {}", display_node_version(current_node_version).bold()));
+    output::raw(&format!(
+        "Current Node.js: {}",
+        style(&display_node_version(current_node_version)).bold()
+    ));
     output::raw("");
     output::raw("Affected packages:");
     for package in packages {
         output::raw(&format!(
             "- {} (installed with {})",
-            package.name.bold(),
-            display_node_version(&package.installed_node).bold()
+            style(&package.name).bold(),
+            style(&display_node_version(&package.installed_node)).bold()
         ));
     }
     output::raw("");

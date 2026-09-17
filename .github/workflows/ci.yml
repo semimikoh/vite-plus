@@ -28,23 +28,8 @@ defaults:
     shell: bash
 
 jobs:
-  optimize-ci:
-    runs-on: ubuntu-latest # or whichever runner you use for your CI
-    outputs:
-      skip: ${{ steps.check_skip.outputs.skip }}
-    steps:
-      - name: Optimize CI
-        id: check_skip
-        # v0.0.9 still declares `using: node20`; emits a Node 20 deprecation warning until upstream ships a node24 release.
-        # https://github.com/withgraphite/graphite-ci-action
-        uses: withgraphite/graphite-ci-action@402a89bc8aa6db18ae1f9c61953d001d5f9d828f # v0.0.11
-        with:
-          graphite_token: ${{ secrets.GRAPHITE_CI_OPTIMIZER_TOKEN }}
-
   detect-changes:
     runs-on: ubuntu-latest
-    needs: optimize-ci
-    if: needs.optimize-ci.outputs.skip == 'false'
     permissions:
       contents: read
       pull-requests: read
@@ -253,7 +238,7 @@ jobs:
         with:
           name: windows-test-archive
 
-      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+      - uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c # v2.87.10
         with:
           tool: cargo-nextest
 
@@ -1113,7 +1098,7 @@ jobs:
         with:
           name: windows-snapshot-test-archive
 
-      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+      - uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c # v2.87.10
         with:
           tool: cargo-nextest
 
@@ -1354,11 +1339,15 @@ jobs:
 
   install-e2e-test-sfw:
     name: Local CLI `vp install` E2E test (Socket Firewall Free)
+    env:
+      # Includes nodejs/node#61999 (first backported in Node 24.20.0).
+      # Override vp's project pins; sfw's embedded Node runtime is separate.
+      VP_NODE_VERSION: '24.21.0'
     needs:
       - download-previous-rolldown-binaries
       - build-windows-cli
     # Run if: not a PR (push-to-main / workflow_dispatch), OR PR has 'test: sfw' label.
-    # Heavy job (3 OSes × real registry traffic) — gated to avoid running on every PR.
+    # Heavy job (real registry traffic) — gated to avoid running on every PR.
     if: >-
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'test: sfw')
@@ -1382,13 +1371,16 @@ jobs:
             sfw_asset: sfw-free-macos-arm64
             vp_bin: vp
             vp_insecure_tls: ''
-          - os: namespace-profile-windows-4c-8g
-            target: x86_64-pc-windows-msvc
-            sfw_asset: sfw-free-windows-x86_64.exe
-            # On Windows vp ships as `vp.exe`; sfw spawns its child process
-            # directly without applying PATHEXT, so the bare `vp` lookup fails.
-            vp_bin: vp.exe
-            vp_insecure_tls: ''
+          # TODO: Re-enable Windows when SFW's embedded Node includes
+          # https://github.com/nodejs/node/pull/61999 (Node 24.20.0 / 26.7.0).
+          # SFW 1.15.2 embeds Node 24.9.0 and hits UV_HANDLE_CLOSING at shutdown.
+          # VP_NODE_VERSION only changes the child runtime, not SFW's runtime.
+          # - os: namespace-profile-windows-4c-8g
+          #   target: x86_64-pc-windows-msvc
+          #   sfw_asset: sfw-free-windows-x86_64.exe
+          #   # SFW spawns directly without PATHEXT, so use vp.exe on Windows.
+          #   vp_bin: vp.exe
+          #   vp_insecure_tls: ''
     runs-on: ${{ matrix.os }}
     steps:
       - uses: taiki-e/checkout-action@7d1e50e93dc4fb3bba58f85018fadf77898aee8b # v1.4.2
@@ -1436,6 +1428,10 @@ jobs:
             echo "$HOME/.vite-plus/bin" >> $GITHUB_PATH
           fi
 
+      - name: Prepare Node.js for SFW tests
+        # Download the selected runtime before entering sfw's proxy.
+        run: vp env exec node --version
+
       - name: Download sfw
         run: |
           set -euo pipefail
@@ -1451,8 +1447,11 @@ jobs:
           fi
           echo "$RUNNER_TEMP/sfw-bin" >> "$GITHUB_PATH"
 
-      - name: Verify sfw on PATH
-        run: sfw --version
+      - name: Verify sfw and embedded Node versions
+        run: |
+          printf '%s\n' 'console.error("SFW embedded Node:", process.version, process.execPath);' \
+            > "$RUNNER_TEMP/sfw-node-version.cjs"
+          NODE_OPTIONS="--require=\"$RUNNER_TEMP/sfw-node-version.cjs\"" sfw --version
 
       - name: Run `sfw vp install` against a real repo
         # TODO(SocketDev/sfw-free#30, SocketDev/sfw-free#43): drop `vp_insecure_tls`
@@ -1469,6 +1468,7 @@ jobs:
           VP_INSECURE_TLS: ${{ matrix.vp_insecure_tls }}
         run: |
           set -euo pipefail
+          sfw "${{ matrix.vp_bin }}" env exec node --version
           # Force the registry-fetch path: install a pinned pnpm globally so
           # vp downloads it (and therefore traverses sfw) rather than reusing
           # whatever's preinstalled on the runner.
